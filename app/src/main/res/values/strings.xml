@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Evite Gallery</string>
+    <string name="transiction_photo">transiction_photo</string>
+    <string name="evite">Evite</string>
+</resources>
