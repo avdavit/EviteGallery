@@ -1,0 +1,95 @@
+name: Claude PR Reviewer
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  claude-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get PR diff
+        id: pr_diff
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr diff ${{ github.event.pull_request.number }} > pr_diff.txt
+          echo "diff_file=pr_diff.txt" >> $GITHUB_OUTPUT
+
+      - name: Review with Claude
+        id: claude_review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          # Read the diff
+          DIFF_CONTENT=$(cat pr_diff.txt)
+
+          # Create the prompt prefix
+          PROMPT="Please review this pull request for an Android project. Focus on:
+          - Code quality and best practices for Android/Kotlin/Java
+          - Potential bugs or issues
+          - Performance considerations
+          - Security concerns
+          - Adherence to Android development patterns
+          - Resource management and memory leaks
+          - UI/UX considerations
+
+          Provide constructive feedback with specific suggestions for improvement.
+
+          Here is the diff:
+
+          "
+
+          # Create JSON payload with proper escaping using jq
+          jq -n \
+            --arg model "claude-sonnet-4-20250514" \
+            --argjson max_tokens 4096 \
+            --arg prompt "$PROMPT" \
+            --arg diff "$DIFF_CONTENT" \
+            '{
+              model: $model,
+              max_tokens: $max_tokens,
+              messages: [{
+                role: "user",
+                content: ($prompt + $diff)
+              }]
+            }' > request.json
+
+          # Call Claude API and save full response for debugging
+          curl -s https://api.anthropic.com/v1/messages \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d @request.json > response.json
+
+          # Debug: print response if there's an error
+          if ! jq -e '.content[0].text' response.json > /dev/null 2>&1; then
+            echo "API Error Response:"
+            cat response.json
+            echo "No review available due to API error" > review.txt
+          else
+            jq -r '.content[0].text' response.json > review.txt
+          fi
+
+      - name: Post review comment
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REVIEW_CONTENT=$(cat review.txt)
+          gh pr comment ${{ github.event.pull_request.number }} --body-file - <<EOF
+          ## 🤖 Claude Code Review
+
+          ${REVIEW_CONTENT}
+
+          ---
+          *Powered by Claude Sonnet 4.5*
+          EOF
