@@ -61,9 +61,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           REVIEW_CONTENT=$(cat review.txt)
-          gh pr comment ${{ github.event.pull_request.number }} --body "## 🤖 Claude Code Review
+          gh pr comment ${{ github.event.pull_request.number }} --body-file - <<EOF
+          ## 🤖 Claude Code Review
 
-${REVIEW_CONTENT}
+          ${REVIEW_CONTENT}
 
----
-*Powered by Claude Sonnet 4.5*"
+          ---
+          *Powered by Claude Sonnet 4.5*
+          EOF
