@@ -33,20 +33,34 @@ jobs:
           # Read the diff
           DIFF_CONTENT=$(cat pr_diff.txt)
 
-          # Escape the diff content for JSON
-          DIFF_JSON=$(jq -Rs . < pr_diff.txt)
+          # Create the prompt prefix
+          PROMPT="Please review this pull request for an Android project. Focus on:
+          - Code quality and best practices for Android/Kotlin/Java
+          - Potential bugs or issues
+          - Performance considerations
+          - Security concerns
+          - Adherence to Android development patterns
+          - Resource management and memory leaks
+          - UI/UX considerations
 
-          # Create JSON payload with proper escaping
+          Provide constructive feedback with specific suggestions for improvement.
+
+          Here is the diff:
+
+          "
+
+          # Create JSON payload with proper escaping using jq
           jq -n \
             --arg model "claude-sonnet-4-20250514" \
             --argjson max_tokens 4096 \
-            --argjson diff "$DIFF_JSON" \
+            --arg prompt "$PROMPT" \
+            --arg diff "$DIFF_CONTENT" \
             '{
               model: $model,
               max_tokens: $max_tokens,
               messages: [{
                 role: "user",
-                content: "Please review this pull request for an Android project. Focus on:\n- Code quality and best practices for Android/Kotlin/Java\n- Potential bugs or issues\n- Performance considerations\n- Security concerns\n- Adherence to Android development patterns\n- Resource management and memory leaks\n- UI/UX considerations\n\nProvide constructive feedback with specific suggestions for improvement.\n\nHere is the diff:\n\n" + $diff
+                content: ($prompt + $diff)
               }]
             }' > request.json
 
