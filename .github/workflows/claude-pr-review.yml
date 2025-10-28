@@ -30,31 +30,41 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          # Create the review request
+          # Read the diff
           DIFF_CONTENT=$(cat pr_diff.txt)
 
-          # Create JSON payload for Claude API
-          cat > request.json <<EOF
-          {
-            "model": "claude-sonnet-4-5",
-            "max_tokens": 4096,
-            "messages": [{
-              "role": "user",
-              "content": "Please review this pull request for an Android project. Focus on:\n- Code quality and best practices for Android/Kotlin/Java\n- Potential bugs or issues\n- Performance considerations\n- Security concerns\n- Adherence to Android development patterns\n- Resource management and memory leaks\n- UI/UX considerations\n\nProvide constructive feedback with specific suggestions for improvement.\n\nHere is the diff:\n\n${DIFF_CONTENT}"
-            }]
-          }
-          EOF
+          # Escape the diff content for JSON
+          DIFF_JSON=$(jq -Rs . < pr_diff.txt)
 
-          # Call Claude API
-          RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+          # Create JSON payload with proper escaping
+          jq -n \
+            --arg model "claude-sonnet-4-20250514" \
+            --argjson max_tokens 4096 \
+            --argjson diff "$DIFF_JSON" \
+            '{
+              model: $model,
+              max_tokens: $max_tokens,
+              messages: [{
+                role: "user",
+                content: "Please review this pull request for an Android project. Focus on:\n- Code quality and best practices for Android/Kotlin/Java\n- Potential bugs or issues\n- Performance considerations\n- Security concerns\n- Adherence to Android development patterns\n- Resource management and memory leaks\n- UI/UX considerations\n\nProvide constructive feedback with specific suggestions for improvement.\n\nHere is the diff:\n\n" + $diff
+              }]
+            }' > request.json
+
+          # Call Claude API and save full response for debugging
+          curl -s https://api.anthropic.com/v1/messages \
             -H "x-api-key: $ANTHROPIC_API_KEY" \
             -H "anthropic-version: 2023-06-01" \
             -H "content-type: application/json" \
-            -d @request.json)
+            -d @request.json > response.json
 
-          # Extract review content
-          echo "$RESPONSE" | jq -r '.content[0].text' > review.txt
-          echo "review_file=review.txt" >> $GITHUB_OUTPUT
+          # Debug: print response if there's an error
+          if ! jq -e '.content[0].text' response.json > /dev/null 2>&1; then
+            echo "API Error Response:"
+            cat response.json
+            echo "No review available due to API error" > review.txt
+          else
+            jq -r '.content[0].text' response.json > review.txt
+          fi
 
       - name: Post review comment
         env:
